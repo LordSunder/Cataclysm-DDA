@@ -928,6 +928,7 @@ bool mattack::resurrect( monster *z )
     }
 
     std::pair<tripoint, item *> raised = random_entry( corpses );
+    assert( raised.second ); // To appease static analysis
     float corpse_damage = raised.second->damage_level( 4 );
     // Did we successfully raise something?
     if( g->revive_corpse( raised.first, *raised.second ) ) {
@@ -1382,7 +1383,8 @@ bool mattack::grow_vine( monster *z )
         }
     }
     z->moves -= 100;
-    int xshift = rng( 0, 2 ), yshift = rng( 0, 2 );
+    int xshift = rng( 0, 2 );
+    int yshift = rng( 0, 2 );
     for( int x = 0; x < 3; x++ ) {
         for( int y = 0; y < 3; y++ ) {
             tripoint dest( z->posx() + ( x + xshift ) % 3 - 1,
@@ -2775,7 +2777,7 @@ bool mattack::nurse_assist( monster *z )
 
     const bool u_see = g->u.sees( *z );
 
-    if( u_see && one_in( 10 ) ) {
+    if( u_see && one_in( 100 ) ) {
         add_msg( m_info, _( "The %s is scanning its surroundings." ), z->name() );
     }
 
@@ -2817,19 +2819,19 @@ bool mattack::nurse_operate( monster *z )
     }
     const bool u_see = g->u.sees( *z );
 
-    if( u_see && one_in( 10 ) ) {
+    if( u_see && one_in( 100 ) ) {
         add_msg( m_info, _( "The %s is scanning its surroundings." ), z->name() );
     }
 
 
     if( ( ( g->u.is_wearing( "badge_doctor" ) ||
-            z->attitude_to( g->u ) == Creature::Attitude::A_FRIENDLY ) && u_see ) && one_in( 30 ) ) {
+            z->attitude_to( g->u ) == Creature::Attitude::A_FRIENDLY ) && u_see ) && one_in( 100 ) ) {
 
         add_msg( m_info, _( "The %s doesn't seem to register you as a doctor." ), z->name() );
     }
 
     if( z->ammo[ammo_type] == 0 && u_see ) {
-        if( one_in( 30 ) ) {
+        if( one_in( 100 ) ) {
             add_msg( m_info, _( "The %s looks at its empty anesthesia kit with a dejected look." ), z->name() );
         }
         return false;
@@ -2852,7 +2854,11 @@ bool mattack::nurse_operate( monster *z )
             }
         }
     }
-
+    if( found_target && z->attitude_to( g->u ) == Creature::Attitude::A_FRIENDLY ) {
+        if( one_in( 50 ) ) {
+            return false; // 50% chance to not turn hostile again
+        }
+    }
     if( found_target && u_see ) {
         add_msg( m_info, _( "The %1$s scans %2$s and seems to detect something." ), z->name(),
                  target->disp_name() );
@@ -2860,6 +2866,7 @@ bool mattack::nurse_operate( monster *z )
 
     if( found_target ) {
 
+        z->friendly = 0;
         z->anger = 100;
         std::list<tripoint> couch_pos = g->m.find_furnitures_in_radius( z->pos(), 10,
                                         furn_id( "f_autodoc_couch" ) ) ;

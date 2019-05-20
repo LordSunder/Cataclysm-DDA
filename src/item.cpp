@@ -204,6 +204,7 @@ item::item( const itype *type, time_point turn, int qty ) : type( type ), bday( 
     } else if( type->tool ) {
         if( ammo_remaining() && ammo_type() ) {
             ammo_set( ammo_type()->default_ammotype(), ammo_remaining() );
+            on_charges_changed();
         }
     }
 
@@ -1441,7 +1442,6 @@ std::string item::info( std::vector<iteminfo> &info, const iteminfo_query *parts
 
         bool has_ammo = curammo && mod->ammo_remaining();
 
-        damage_instance ammo_dam = has_ammo ? curammo->ammo->damage : damage_instance();
         // TODO: This doesn't cover multiple damage types
         int ammo_pierce     = has_ammo ? get_ranged_pierce( *curammo->ammo ) : 0;
         int ammo_dispersion = has_ammo ? curammo->ammo->dispersion : 0;
@@ -1524,6 +1524,7 @@ std::string item::info( std::vector<iteminfo> &info, const iteminfo_query *parts
                 }
             } else {
                 if( parts->test( iteminfo_parts::GUN_DAMAGE_LOADEDAMMO ) ) {
+                    damage_instance ammo_dam = has_ammo ? curammo->ammo->damage : damage_instance();
                     info.push_back( iteminfo( "GUN", "ammo_damage", "",
                                               iteminfo::no_newline | iteminfo::no_name |
                                               iteminfo::show_plus,
@@ -3061,6 +3062,31 @@ void item::on_contents_changed()
     if( is_non_resealable_container() ) {
         convert( type->container->unseals_into );
     }
+    if( is_tool() || is_gun() ) {
+        if( !is_container_empty() ) {
+            for( auto &it : contents ) {
+                if( ammo_type() == ammotype( it.typeId() ) ) {
+                    charges = it.charges;
+                }
+            }
+        } else if( ammo_data() && ammo_data()->phase == LIQUID ) {
+            charges = 0;
+        }
+    }
+}
+
+void item::on_charges_changed()
+{
+    if( ( is_tool() || is_gun() ) && !is_container_empty() ) {
+        for( auto &it : contents ) {
+            if( ammo_type() == ammotype( it.typeId() ) ) {
+                it.charges = charges;
+            }
+        }
+    } else if( ( is_tool() || is_gun() ) && is_container_empty() &&
+               charges > 0 ) { // if for some reason the tool/gun has charges but no content
+        contents.emplace_back( ammo_type()->default_ammotype(), calendar::turn, charges );
+    }
 }
 
 void item::on_damage( int, damage_type )
@@ -3430,6 +3456,7 @@ units::mass item::weight( bool include_contents ) const
         ret *= charges;
 
     } else if( is_corpse() ) {
+        assert( corpse ); // To appease static analysis
         ret = corpse->weight;
         if( has_flag( "FIELD_DRESS" ) || has_flag( "FIELD_DRESS_FAILED" ) ) {
             ret *= 0.75;
@@ -5767,6 +5794,7 @@ int item::ammo_consume( int qty, const tripoint &pos )
             g->u.charge_power( -qty );
         }
         charges -= qty;
+        on_charges_changed();
         if( charges == 0 ) {
             curammo = nullptr;
         }
@@ -6391,6 +6419,7 @@ bool item::reload( player &u, item_location loc, int qty )
             qty = std::min( qty, ammo->charges );
             ammo->charges -= qty;
             charges += qty;
+            on_charges_changed();
         }
     }
 
@@ -7065,7 +7094,6 @@ bool item::detonate( const tripoint &p, std::vector<item> &drops )
         const int rounds_exploded = rng( 1, charges_remaining );
         // Yank the exploding item off the map for the duration of the explosion
         // so it doesn't blow itself up.
-        item temp_item = *this;
         const islot_ammo &ammo_type = *type->ammo;
 
         if( ammo_type.special_cookoff ) {
@@ -7074,6 +7102,7 @@ bool item::detonate( const tripoint &p, std::vector<item> &drops )
         }
         charges_remaining -= rounds_exploded;
         if( charges_remaining > 0 ) {
+            item temp_item = *this;
             temp_item.charges = charges_remaining;
             drops.push_back( temp_item );
         }
@@ -7157,8 +7186,8 @@ std::string item::components_to_string() const
     typedef std::map<std::string, int> t_count_map;
     t_count_map counts;
     for( const auto &elem : components ) {
-        const std::string name = elem.display_name();
         if( !elem.has_flag( "BYPRODUCT" ) ) {
+            const std::string name = elem.display_name();
             counts[name]++;
         }
     }
@@ -7202,7 +7231,7 @@ void item::apply_freezerburn()
     }
 }
 
-void item::process_temperature_rot( float insulation, const tripoint pos,
+void item::process_temperature_rot( float insulation, const tripoint &pos,
                                     player *carrier, const temperature_flag flag )
 {
     const time_point now = calendar::turn;

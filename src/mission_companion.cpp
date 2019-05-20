@@ -184,13 +184,13 @@ void talk_function::scavenger_raid( mission_data &mission_key, npc &p )
 
 void talk_function::commune_menial( mission_data &mission_key, npc &p )
 {
-    std::string entry = _( "Profit: $8/hour\nDanger: Minimal\nTime: 1 hour minimum\n \n"
-                           "Assigning one of your allies to menial labor is a safe way to teach "
-                           "them basic skills and build reputation with the outpost.  Don't expect "
-                           "much of a reward though." );
     mission_key.add( "Assign Ally to Menial Labor", _( "Assign Ally to Menial Labor" ) );
     std::vector<npc_ptr> npc_list = companion_list( p, "_labor" );
     if( !npc_list.empty() ) {
+        std::string entry = _( "Profit: $8/hour\nDanger: Minimal\nTime: 1 hour minimum\n \n"
+                               "Assigning one of your allies to menial labor is a safe way to teach "
+                               "them basic skills and build reputation with the outpost.  Don't expect "
+                               "much of a reward though." );
         entry = _( "Profit: $8/hour\nDanger: Minimal\nTime: 1 hour minimum\n \nLabor Roster:\n" );
         for( auto &elem : npc_list ) {
             entry = entry + "  " + elem->name + " [" + to_string( to_hours<int>( calendar::turn -
@@ -480,9 +480,7 @@ bool talk_function::display_and_choose_opts( mission_data &mission_key, const tr
             .viewport_pos( info_offset )
             .viewport_size( info_height )
             .apply( w_info );
-            if( info_offset < mission_text.size() ) {
-                end_line = std::min( info_height, mission_text.size() - info_offset );
-            }
+            end_line = std::min( info_height, mission_text.size() - info_offset );
 
             // Display the current subset of the mission text.
             for( size_t start_line = 0; start_line < end_line; start_line++ ) {

@@ -141,11 +141,11 @@ map::map( int mapsize, bool zlev )
     }
 
     for( auto &ptr : caches ) {
-        ptr = std::unique_ptr<level_cache>( new level_cache() );
+        ptr = std::make_unique<level_cache>();
     }
 
     for( auto &ptr : pathfinding_caches ) {
-        ptr = std::unique_ptr<pathfinding_cache>( new pathfinding_cache() );
+        ptr = std::make_unique<pathfinding_cache>();
     }
 
     dbg( D_INFO ) << "map::map(): my_MAPSIZE: " << my_MAPSIZE << " z-levels enabled:" << zlevels;
@@ -1055,7 +1055,7 @@ vehicle *map::displace_vehicle( tripoint &p, const tripoint &dp )
             const vehicle_part &veh_part = veh->parts[prt];
             tripoint psgp( part_pos.x + dp.x + veh_part.precalc[1].x - veh_part.precalc[0].x,
                            part_pos.y + dp.y + veh_part.precalc[1].y - veh_part.precalc[0].y,
-                           psg->posz() );
+                           psg->posz() + dp.z );
             // someone is in the way so try again
             if( g->critter_at( psgp ) ) {
                 complete = false;
@@ -1063,14 +1063,10 @@ vehicle *map::displace_vehicle( tripoint &p, const tripoint &dp )
             }
             if( psg == &g->u ) {
                 // If passenger is you, we need to update the map
-                psg->setpos( psgp );
                 need_update = true;
                 z_change = dp.z;
-            } else {
-                // Player gets z position changed by g->vertical_move()
-                psgp.z += dp.z;
-                psg->setpos( psgp );
             }
+            psg->setpos( psgp );
             r.moved = true;
         }
     }
@@ -4805,7 +4801,7 @@ std::list<item> map::use_amount_square( const tripoint &p, const itype_id &type,
     return ret;
 }
 
-std::list<item> map::use_amount( const tripoint &origin, const int range, const itype_id type,
+std::list<item> map::use_amount( const tripoint &origin, const int range, const itype_id &type,
                                  int &quantity, const std::function<bool( const item & )> &filter )
 {
     std::list<item> ret;
@@ -5220,7 +5216,7 @@ const trap &map::tr_at( const tripoint &p ) const
     return current_submap->get_trap( l ).obj();
 }
 
-void map::trap_set( const tripoint &p, const trap_id type )
+void map::trap_set( const tripoint &p, const trap_id &type )
 {
     if( !inbounds( p ) ) {
         return;
@@ -7398,7 +7394,7 @@ void map::clear_traps()
     }
 }
 
-const std::vector<tripoint> &map::trap_locations( const trap_id type ) const
+const std::vector<tripoint> &map::trap_locations( const trap_id &type ) const
 {
     return traplocs[type];
 }

@@ -16,6 +16,7 @@
 #include "fungal_effects.h"
 #include "game.h"
 #include "map.h"
+#include "map_iterator.h"
 #include "mapdata.h"
 #include "mapgen_functions.h"
 #include "overmapbuffer.h"
@@ -50,6 +51,8 @@ static const mongroup_id GROUP_MAYBE_MIL( "GROUP_MAYBE_MIL" );
 static const mongroup_id GROUP_FISH( "GROUP_FISH" );
 
 static const mtype_id mon_zombie_tough( "mon_zombie_tough" );
+static const mtype_id mon_marloss_zealot_f( "mon_marloss_zealot_f" );
+static const mtype_id mon_marloss_zealot_m( "mon_marloss_zealot_m" );
 static const mtype_id mon_zombie_smoker( "mon_zombie_smoker" );
 static const mtype_id mon_zombie_scientist( "mon_zombie_scientist" );
 static const mtype_id mon_chickenbot( "mon_chickenbot" );
@@ -194,7 +197,7 @@ void mx_helicopter( map &m, const tripoint &abs_sub )
     auto crashed_hull = vgroup_id( "crashed_helicopters" )->pick();
 
     // Create the vehicle so we can rotate it and calculate its bounding box, but don't place it on the map.
-    auto veh = std::unique_ptr<vehicle>( new vehicle( crashed_hull, rng( 1, 33 ), 1 ) );
+    auto veh = std::make_unique<vehicle>( crashed_hull, rng( 1, 33 ), 1 );
 
     veh->turn( dir1 );
 
@@ -525,6 +528,24 @@ void mx_roadblock( map &m, const tripoint &abs_sub )
     }
 }
 
+void mx_marloss_pilgrimage( map &m, const tripoint &abs_sub )
+{
+    const tripoint leader_pos( rng( 4, 19 ), rng( 4, 19 ), abs_sub.z );
+    const int max_followers = rng( 3, 12 );
+    const int rad = 3;
+    tripoint_range spawnzone = m.points_in_radius( leader_pos, rad );
+
+    m.place_npc( leader_pos.x, leader_pos.y, string_id<npc_template>( "marloss_voice" ) );
+    for( int spawned = 0 ; spawned <= max_followers ; spawned++ ) {
+        tripoint where = random_entry( spawnzone );
+        if( g->is_empty( where ) ) {
+            one_in( 2 ) ? m.add_spawn( mon_marloss_zealot_f, 1, where.x,
+                                       where.y ) : m.add_spawn( mon_marloss_zealot_m, 1, where.x, where.y );
+        }
+    }
+
+}
+
 void mx_bandits_block( map &m, const tripoint &abs_sub )
 {
     const oter_id &north = overmap_buffer.ter( abs_sub.x, abs_sub.y - 1, abs_sub.z );
@@ -749,34 +770,32 @@ void mx_portal( map &m, const tripoint &abs_sub )
 
 void mx_minefield( map &m, const tripoint &abs_sub )
 {
-    int num_mines = rng( 6, 20 );
-    for( int x = 0; x < SEEX * 2; x++ ) {
-        for( int y = 0; y < SEEY * 2; y++ ) {
-            if( one_in( 3 ) ) {
-                m.ter_set( x, y, t_dirt );
-            }
-        }
-    }
+    const int num_mines = rng( 6, 20 );
+
     for( int i = 0; i < num_mines; i++ ) {
         // No mines at the extreme edges: safe to walk on a sign tile
-        int x = rng( 1, SEEX * 2 - 2 ), y = rng( 1, SEEY * 2 - 2 );
-        if( !m.has_flag( "DIGGABLE", x, y ) || one_in( 8 ) ) {
-            m.ter_set( x, y, t_dirtmound );
+        const int x = rng( 1, SEEX * 2 - 2 ), y = rng( 1, SEEY * 2 - 2 );
+        if( m.has_flag( "DIGGABLE", x, y ) ) {
+            mtrap_set( &m, x, y, tr_landmine_buried );
+        } else {
+            mtrap_set( &m, x, y, tr_landmine );
         }
-        mtrap_set( &m, x, y, tr_landmine_buried );
     }
-    int x1 = 0;
-    int y1 = 0;
-    int x2 = ( SEEX * 2 - 1 );
-    int y2 = ( SEEY * 2 - 1 );
-    m.furn_set( x1, y1, furn_str_id( "f_sign" ) );
-    m.set_signage( tripoint( x1,  y1, abs_sub.z ), _( "DANGER! MINEFIELD!" ) );
-    m.furn_set( x1, y2, furn_str_id( "f_sign" ) );
-    m.set_signage( tripoint( x1,  y2, abs_sub.z ), _( "DANGER! MINEFIELD!" ) );
-    m.furn_set( x2, y1, furn_str_id( "f_sign" ) );
-    m.set_signage( tripoint( x2,  y1, abs_sub.z ), _( "DANGER! MINEFIELD!" ) );
-    m.furn_set( x2, y2, furn_str_id( "f_sign" ) );
-    m.set_signage( tripoint( x2,  y2, abs_sub.z ), _( "DANGER! MINEFIELD!" ) );
+
+    const std::string text = _( "DANGER! MINEFIELD!" );
+    const int x = SEEX * 2 - 1;
+    const int y = SEEY * 2 - 1;
+    const int x1 = rng( SEEX / 2, SEEX / 2 + SEEX ), x2 = rng( SEEX / 2, SEEX / 2 + SEEX );
+    const int y1 = rng( SEEY / 2, SEEY / 2 + SEEY ), y2 = rng( SEEY / 2, SEEY / 2 + SEEY );
+
+    m.furn_set( x1, 0, furn_str_id( "f_sign_warning" ) );
+    m.set_signage( tripoint( x1,  0, abs_sub.z ), text );
+    m.furn_set( x2, y, furn_str_id( "f_sign_warning" ) );
+    m.set_signage( tripoint( x2,  y, abs_sub.z ), text );
+    m.furn_set( 0, y1, furn_str_id( "f_sign_warning" ) );
+    m.set_signage( tripoint( 0, y1, abs_sub.z ), text );
+    m.furn_set( x, y2, furn_str_id( "f_sign_warning" ) );
+    m.set_signage( tripoint( x, y2, abs_sub.z ), text );
 }
 
 void mx_crater( map &m, const tripoint &abs_sub )
@@ -1148,6 +1167,7 @@ FunctionMap builtin_functions = {
     { "mx_pond", mx_pond },
     { "mx_clay_deposit", mx_clay_deposit },
     { "mx_bandits_block", mx_bandits_block },
+    { "mx_marloss_pilgrimage", mx_marloss_pilgrimage },
 };
 
 map_special_pointer get_function( const std::string &name )

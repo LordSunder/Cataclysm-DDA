@@ -977,7 +977,29 @@
     "move_cost_mod": 1,
     "coverage": 35,
     "required_str": -1,
-    "flags": [ "TRANSPARENT", "FLAMMABLE_ASH", "ORGANIC", "MOUNTABLE" ],
+    "flags": [ "TRANSPARENT", "FLAMMABLE_ASH", "ORGANIC", "MOUNTABLE", "SIGN" ],
+    "deconstruct": { "items": [ { "item": "2x4", "count": 3 }, { "item": "nail", "charges": [ 2, 5 ] } ] },
+    "bash": {
+      "str_min": 6,
+      "str_max": 40,
+      "sound": "smash!",
+      "sound_fail": "whump.",
+      "items": [ { "item": "2x4", "count": [ 1, 2 ] }, { "item": "nail", "charges": [ 2, 4 ] }, { "item": "splinter", "count": 2 } ]
+    }
+  },
+  {
+    "type": "furniture",
+    "id": "f_sign_warning",
+    "name": "warning sign",
+    "symbol": "P",
+    "description": "A triangle-shaped sign on a post meant to indicate something important or hazard.",
+    "color": "red",
+    "examine_action": "sign",
+    "looks_like": "f_sign",
+    "move_cost_mod": 1,
+    "coverage": 35,
+    "required_str": -1,
+    "flags": [ "TRANSPARENT", "FLAMMABLE_ASH", "ORGANIC", "MOUNTABLE", "SIGN" ],
     "deconstruct": { "items": [ { "item": "2x4", "count": 3 }, { "item": "nail", "charges": [ 2, 5 ] } ] },
     "bash": {
       "str_min": 6,
@@ -6086,13 +6108,19 @@
   },
   {
     "type": "furniture",
-    "id": "f_fake_bench_ground",
-    "name": "fake workbench ground",
-    "description": "This fake workbench holds the stats for working on a item on the ground.",
-    "symbol": "#",
-    "color": "red",
+    "//": "This furniture object also gets used as a fake workbench whenever a player crafts on the ground anywhere else.",
+    "id": "f_ground_crafting_spot",
+    "name": "ground crafting spot",
+    "looks_like": "tr_firewood_source",
+    "description": "A cleared spot on the ground for crafting.  Slower than using a workbench or holding a project in your hands, but readily available.",
+    "symbol": "x",
+    "color": "white",
     "move_cost_mod": 2,
-    "required_str": -1,
+    "required_str": 0,
+    "deconstruct": { "items": [  ] },
+    "bash": { "str_min": 0, "str_max": 0, "items": [  ] },
+    "flags": [ "PLACE_ITEM", "TRANSPARENT", "EASY_DECONSTRUCT" ],
+    "examine_action": "workbench",
     "workbench": { "multiplier": 0.7, "mass": 1000000, "volume": "1000L" }
   }
 ]

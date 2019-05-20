@@ -2528,7 +2528,6 @@ void game::load_master()
     using namespace std::placeholders;
     const auto datafile = get_world_base_save_path() + "/master.gsav";
     read_from_file_optional( datafile, std::bind( &game::unserialize_master, this, _1 ) );
-    faction_manager_ptr->create_if_needed();
 }
 
 bool game::load( const std::string &world )
@@ -7231,8 +7230,11 @@ game::vmenu_ret game::list_items( const std::vector<map_item_stack> &item_list )
                 iActive = mSortCategory[0].empty() ? 0 : 1;
             }
         } else if( action == "RIGHT" ) {
-            if( !filtered_items.empty() && ++page_num >= static_cast<int>( activeItem->vIG.size() ) ) {
-                page_num = activeItem->vIG.size() - 1;
+            if( !filtered_items.empty() ) {
+                assert( activeItem ); // To appease static analysis
+                if( ++page_num >= static_cast<int>( activeItem->vIG.size() ) ) {
+                    page_num = activeItem->vIG.size() - 1;
+                }
             }
         } else if( action == "LEFT" ) {
             page_num = std::max( 0, page_num - 1 );
@@ -8316,6 +8318,7 @@ void game::butcher()
                                 to_string_clipped( time_duration::from_turns( time_to_disassemble_all / 100 ) ) );
         }
         if( salvageables.size() > 1 ) {
+            assert( salvage_iuse ); // To appease static analysis
             int time_to_salvage = 0;
             for( const auto &stack : salvage_stacks ) {
                 const item &it = items[ stack.first ];
@@ -9031,46 +9034,25 @@ bool game::plmove( int dx, int dy, int dz )
         return true;
     }
 
-    if( !u.has_effect( effect_stunned ) && !u.is_underwater() ) {
-        int mining_turns = 100;
-        if( mostseen == 0 && m.has_flag( "MINEABLE", dest_loc ) && !m.veh_at( dest_loc ) ) {
-            if( m.move_cost( dest_loc ) == 2 ) {
-                // breaking up some flat surface, like pavement
-                mining_turns /= 2;
+    if( m.has_flag( TFLAG_MINEABLE, dest_loc ) && mostseen == 0 &&
+        get_option<bool>( "AUTO_FEATURES" ) && get_option<bool>( "AUTO_MINING" ) &&
+        !m.veh_at( dest_loc ) && !u.is_underwater() && !u.has_effect( effect_stunned ) ) {
+        if( u.weapon.has_flag( "DIG_TOOL" ) ) {
+            if( u.weapon.type->can_use( "JACKHAMMER" ) && u.weapon.ammo_sufficient() ) {
+                u.invoke_item( &u.weapon, "JACKHAMMER", dest_loc );
+                u.defer_move( dest_loc ); // don't move into the tile until done mining
+                return true;
+            } else if( u.weapon.type->can_use( "PICKAXE" ) ) {
+                u.invoke_item( &u.weapon, "PICKAXE", dest_loc );
+                u.defer_move( dest_loc ); // don't move into the tile until done mining
+                return true;
             }
-            if( get_option<bool>( "AUTO_FEATURES" ) && get_option<bool>( "AUTO_MINING" ) ) {
-                if( u.weapon.has_flag( "DIG_TOOL" ) ) {
-                    if( u.weapon.has_flag( "POWERED" ) ) {
-                        if( u.weapon.ammo_sufficient() ) {
-                            mining_turns *= MINUTES( 30 );
-                            u.weapon.ammo_consume( u.weapon.ammo_required(), u.pos() );
-                            u.assign_activity( activity_id( "ACT_JACKHAMMER" ), mining_turns, -1,
-                                               u.get_item_position( &u.weapon ) );
-                            u.activity.placement = dest_loc;
-                            add_msg( _( "You start breaking the %1$s with your %2$s." ),
-                                     m.tername( dest_loc ), u.weapon.tname() );
-                            u.defer_move( dest_loc ); // don't move into the tile until done mining
-                            return true;
-                        } else {
-                            add_msg( _( "Your %s doesn't turn on." ), u.weapon.tname() );
-                        }
-                    } else {
-                        mining_turns *= ( ( MAX_STAT + 4 ) - std::min( u.str_cur, MAX_STAT ) ) * MINUTES( 5 );
-                        u.assign_activity( activity_id( "ACT_PICKAXE" ), mining_turns, -1,
-                                           u.get_item_position( &u.weapon ) );
-                        u.activity.placement = dest_loc;
-                        add_msg( _( "You start breaking the %1$s with your %2$s." ),
-                                 m.tername( dest_loc ), u.weapon.tname() );
-                        u.defer_move( dest_loc ); // don't move into the tile until done mining
-                        return true;
-                    }
-                } else if( u.has_trait( trait_BURROW ) ) {
-                    item burrowing_item( itype_id( "fake_burrowing" ) );
-                    u.invoke_item( &burrowing_item, "BURROW", dest_loc );
-                    u.defer_move( dest_loc ); // don't move into the tile until done mining
-                    return true;
-                }
-            }
+        }
+        if( u.has_trait( trait_BURROW ) ) {
+            item burrowing_item( itype_id( "fake_burrowing" ) );
+            u.invoke_item( &burrowing_item, "BURROW", dest_loc );
+            u.defer_move( dest_loc ); // don't move into the tile until done mining
+            return true;
         }
     }
 
@@ -9375,6 +9357,9 @@ bool game::walk_move( const tripoint &dest_loc )
     bool pulling = false; // moving -away- from grabbed tile; check for move_cost > 0
     bool shifting_furniture = false; // moving furniture and staying still; skip check for move_cost > 0
 
+    const tripoint furn_pos = u.pos() + u.grab_point;
+    const tripoint furn_dest = dest_loc + u.grab_point;
+
     bool grabbed = u.get_grab_type() != OBJECT_NONE;
     if( grabbed ) {
         const tripoint dp = dest_loc - u.pos();
@@ -9383,7 +9368,7 @@ bool game::walk_move( const tripoint &dest_loc )
     }
 
     if( grabbed && dest_loc.z != u.posz() ) {
-        add_msg( m_warning, _( "You let go of the grabbed object" ) );
+        add_msg( m_warning, _( "You let go of the grabbed object." ) );
         grabbed = false;
         u.grab( OBJECT_NONE );
     }
@@ -9419,7 +9404,7 @@ bool game::walk_move( const tripoint &dest_loc )
     }
     u.set_underwater( false );
 
-    if( !shifting_furniture && !prompt_dangerous_tile( dest_loc ) ) {
+    if( !shifting_furniture && !pushing && !prompt_dangerous_tile( dest_loc ) ) {
         return true;
     }
 
@@ -9547,13 +9532,26 @@ bool game::walk_move( const tripoint &dest_loc )
         u.lifetime_stats.squares_walked++;
     }
 
-    place_player( dest_loc );
+    point submap_shift = place_player( dest_loc );
+
+    if( pulling ) {
+        const tripoint shifted_furn_pos = tripoint( furn_pos.x - submap_shift.x * SEEX,
+                                          furn_pos.y - submap_shift.y * SEEY, furn_pos.z );
+        const tripoint shifted_furn_dest = tripoint( furn_dest.x - submap_shift.x * SEEX,
+                                           furn_dest.y - submap_shift.y * SEEY, furn_dest.z );
+        const time_duration fire_age = m.get_field_age( shifted_furn_pos, fd_fire );
+        const int fire_str = m.get_field_strength( shifted_furn_pos, fd_fire );
+        m.remove_field( shifted_furn_pos, fd_fire );
+        m.set_field_strength( shifted_furn_dest, fd_fire, fire_str );
+        m.set_field_age( shifted_furn_dest, fd_fire, fire_age );
+    }
+
     on_move_effects();
 
     return true;
 }
 
-void game::place_player( const tripoint &dest_loc )
+point game::place_player( const tripoint &dest_loc )
 {
     const optional_vpart_position vp1 = m.veh_at( dest_loc );
     if( const cata::optional<std::string> label = vp1.get_label() ) {
@@ -9648,9 +9646,11 @@ void game::place_player( const tripoint &dest_loc )
         u.stop_hauling();
     }
     u.setpos( dest_loc );
-    update_map( u );
+    point submap_shift = update_map( u );
     // Important: don't use dest_loc after this line. `update_map` may have shifted the map
     // and dest_loc was not adjusted and therefore is still in the un-shifted system and probably wrong.
+    // If you must use it you can calculate the position in the new, shifted system with
+    // adjusted_pos = ( old_pos.x - submap_shift.x * SEEX, old_pos.y - submap_shift.y * SEEY, old_pos.z )
 
     //Auto pulp or butcher and Auto foraging
     if( get_option<bool>( "AUTO_FEATURES" ) && mostseen == 0 ) {
@@ -9828,6 +9828,7 @@ void game::place_player( const tripoint &dest_loc )
         add_msg( _( "There are vehicle controls here." ) );
         add_msg( m_info, _( "%s to drive." ), press_x( ACTION_CONTROL_VEHICLE ) );
     }
+    return submap_shift;
 }
 
 void game::place_player_overmap( const tripoint &om_dest )
@@ -9955,6 +9956,7 @@ bool game::grabbed_furn_move( const tripoint &dp )
     const furn_t furntype = m.furn( fpos ).obj();
     const int src_items = m.i_at( fpos ).size();
     const int dst_items = m.i_at( fdest ).size();
+
     const bool only_liquid_items = std::all_of( m.i_at( fdest ).begin(), m.i_at( fdest ).end(),
     [&]( item & liquid_item ) {
         return liquid_item.made_of_from_type( LIQUID );
@@ -9965,7 +9967,11 @@ bool game::grabbed_furn_move( const tripoint &dp )
                              !m.has_flag( "DESTROY_ITEM", fdest ) &&
                              only_liquid_items;
     const bool src_item_ok = m.furn( fpos ).obj().has_flag( "CONTAINER" ) ||
+                             m.furn( fpos ).obj().has_flag( "FIRE_CONTAINER" ) ||
                              m.furn( fpos ).obj().has_flag( "SEALED" );
+
+    const int fire_str = m.get_field_strength( fpos, fd_fire );
+    time_duration fire_age = m.get_field_age( fpos, fd_fire );
 
     int str_req = furntype.move_str_req;
     // Factor in weight of items contained in the furniture.
@@ -10024,6 +10030,12 @@ bool game::grabbed_furn_move( const tripoint &dp )
     m.furn_set( fdest, m.furn( fpos ) );
     m.furn_set( fpos, f_null );
 
+    if( fire_str == 1 && !pulling_furniture ) {
+        m.remove_field( fpos, fd_fire );
+        m.set_field_strength( fdest, fd_fire, fire_str );
+        m.set_field_age( fdest, fd_fire, fire_age );
+    }
+
     // Is there is only liquids on the ground, remove them after moving furniture.
     if( dst_items > 0 && only_liquid_items ) {
         m.i_clear( fdest );
@@ -10055,7 +10067,7 @@ bool game::grabbed_furn_move( const tripoint &dp )
         if( abs( d_sum.x ) < 2 && abs( d_sum.y ) < 2 ) {
             u.grab_point = d_sum; // furniture moved relative to us
         } else { // we pushed furniture out of reach
-            add_msg( _( "You let go of the %s" ), furntype.name() );
+            add_msg( _( "You let go of the %s." ), furntype.name() );
             u.grab( OBJECT_NONE );
         }
         return true; // We moved furniture but stayed still.
@@ -10063,7 +10075,7 @@ bool game::grabbed_furn_move( const tripoint &dp )
 
     if( pushing_furniture && m.impassable( fpos ) ) {
         // Not sure how that chair got into a wall, but don't let player follow.
-        add_msg( _( "You let go of the %1$s as it slides past %2$s" ),
+        add_msg( _( "You let go of the %1$s as it slides past %2$s." ),
                  furntype.name(), m.tername( fdest ) );
         u.grab( OBJECT_NONE );
         return true;
@@ -10904,11 +10916,11 @@ void game::vertical_notes( int z_before, int z_after )
     }
 }
 
-void game::update_map( player &p )
+point game::update_map( player &p )
 {
     int x = p.posx();
     int y = p.posy();
-    update_map( x, y );
+    return update_map( x, y );
 }
 
 point game::update_map( int &x, int &y )
